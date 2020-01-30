@@ -10,8 +10,9 @@ class SendItem:
         self._on_send = on_send
 
     def sended(self, communicator_target):
-        communicator_target.send_queue.remove(self)
-        self._on_send(self, communicator_target)
+        if self in communicator_target.send_queue:
+            communicator_target.send_queue.remove(self)
+            self._on_send(self, communicator_target)
 
     def __str__(self):
         return f"{self.__class__.__name__}({self.data})"

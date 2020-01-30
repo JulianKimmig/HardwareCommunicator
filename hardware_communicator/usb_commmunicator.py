@@ -8,7 +8,6 @@ from hardware_communicator.abstract_communicator import AbstractCommunicator
 
 
 def get_avalable_serial_ports(ignore=None):
-    print("BBB")
     if ignore is None:
         ignore = []
     if sys.platform.startswith("win"):
@@ -52,7 +51,7 @@ class SerialCommunicator(AbstractCommunicator):
         1200,
     ]
 
-    def __init__(self, port=None, auto_port=True, async=True, use_asyncio=True):
+    def __init__(self, port=None, auto_port=True, async=True, use_asyncio=None):
         super().__init__(use_asyncio=use_asyncio)
         self.connection_checks = []
         self.port = port
@@ -60,7 +59,8 @@ class SerialCommunicator(AbstractCommunicator):
         self.serial_connection = None
         self.is_open = False
         self.read_buffer = []
-
+        if not hasattr(self, "on_connect"):
+            self.on_connect = None
         if self.port:
             self.connect_to_port(port)
 
@@ -110,10 +110,14 @@ class SerialCommunicator(AbstractCommunicator):
                 except serial.serialutil.SerialException:
                     await asyncio.sleep(1)
             if self.connected:
+                self.port = port
                 self.logger.info(f'successfully connected to "{port} with baud {baud}"')
+                if self.on_connect:
+                    self.on_connect()
                 return port
 
     def _close_port(self):
+        self.port = None
         port = None
         if self.serial_connection:
             port = self.serial_connection.port
@@ -124,6 +128,7 @@ class SerialCommunicator(AbstractCommunicator):
         self.is_open = False
 
     def _open_port(self, port, baud):
+        self.port = port
         if self.serial_connection or self.is_open:
             self._close_port()
         self.serial_connection = serial.Serial(port, baudrate=baud, timeout=0)
@@ -176,7 +181,11 @@ class SerialCommunicator(AbstractCommunicator):
         #   if(len(self.send_queue)>0):
         # print(self.port, self.send_queue)
         for item in self.send_queue:
-            self.serial_connection.write(list(item.data))
+            try:
+                self.serial_connection.write(list(item.data))
+            except Exception as e:
+                self.logger.error(f"cannot write {item}")
+                raise e
             item.sended(self)
 
     def validate_buffer(self):

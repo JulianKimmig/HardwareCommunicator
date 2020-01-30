@@ -9,7 +9,7 @@ from hardware_communicator.message_interpreter.basic_interpreter import (
 def bytearray_to_dtype(byte_array, dtype):
     new = np.array(byte_array)
     if dtype == str:
-        new = "".join(new.astype(str))
+        new = b''.join(new).decode('latin-1')
     else:
         target_size = np.dtype(dtype).itemsize
         size = len(new.tostring())
@@ -144,18 +144,21 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
                 pass
             if data_end_position > -1:
                 key_and_data = data[data_start_position:data_end_position]
+                try:
+                    for name, query in self.queries.items():
+                        key = query["key"]
+                        if key == b"".join(key_and_data[: len(key)]):
+                            raw_data = key_and_data[len(key):]
+                            receive_size = query["receive_size"]
+                            if receive_size[1] >= len(raw_data) >= receive_size[0]:
+                                if query["receive_dtype"]:
+                                    raw_data = bytearray_to_dtype(
+                                        raw_data, query["receive_dtype"]
+                                    )
+                                query["receive_function"](target, raw_data)
 
-                for name, query in self.queries.items():
-                    key = query["key"]
-                    if key == b"".join(key_and_data[: len(key)]):
-                        raw_data = key_and_data[len(key):]
-                        receive_size = query["receive_size"]
-                        if receive_size[1] >= len(raw_data) >= receive_size[0]:
-                            if query["receive_dtype"]:
-                                raw_data = bytearray_to_dtype(
-                                    raw_data, query["receive_dtype"]
-                                )
-                            query["receive_function"](target, raw_data)
-
-                return data[data_end_position + 1:]
+                    return data[data_end_position + 1:]
+                except Exception as e:
+                    print(raw_data)
+                    raise e
         return data[break_position:]
