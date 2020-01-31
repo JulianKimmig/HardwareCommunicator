@@ -155,10 +155,11 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
                                     raw_data = bytearray_to_dtype(
                                         raw_data, query["receive_dtype"]
                                     )
-                                query["receive_function"](target, raw_data)
-
+                                try:
+                                    query["receive_function"](target, raw_data)
+                                except Exception as e:
+                                    return data[data_end_position + 1:]
                     return data[data_end_position + 1:]
                 except Exception as e:
-                    print(raw_data)
                     raise e
         return data[break_position:]
