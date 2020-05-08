@@ -1,2 +1,2 @@
-pre-commit
-Cython
+json_dict
+pyserial

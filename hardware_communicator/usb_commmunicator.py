@@ -1,6 +1,8 @@
-import asyncio
 import glob
+import logging
 import sys
+import threading
+import time
 
 import serial
 
@@ -51,70 +53,130 @@ class SerialCommunicator(AbstractCommunicator):
         1200,
     ]
 
-    def __init__(self, port=None, auto_port=True, async=True, use_asyncio=None):
-        super().__init__(use_asyncio=use_asyncio)
-        self.connection_checks = []
+    def __init__(self, interpreter, port=None, auto_port=True, **kwargs):
+        super().__init__(interpreter=interpreter, **kwargs)
         self.port = port
-        self.connected = False
         self.serial_connection = None
         self.is_open = False
         self.read_buffer = []
-        if not hasattr(self, "on_connect"):
-            self.on_connect = None
+        self._work_port_task = None
+        self._in_finding = False
+        self._in_connecting = False
+        self.auto_reconnect = True
+        self.possible_baud_rates = [pb for pb in self.POSSIBLE_BAUD_RATES]
+
         if self.port:
-            self.connect_to_port(port)
+
+            def ap():
+                time.sleep(0.5)
+                self.connect_to_port(port)
+
+            threading.Thread(target=ap, daemon=True).start()
 
         if not self.connected:
             if auto_port and self.interpreter:
-                self.find_port()
 
-    def find_port(self, blocking=False, excluded_ports=None, retries=3):
-        self.run_task(
-            target=self._find_port,
-            blocking=blocking,
-            excluded_ports=excluded_ports,
-            retries=retries,
-        )
+                def ap():
+                    time.sleep(0.7)
+                    self.find_port()
 
-    async def _find_port(self, excluded_ports=None, retries=3):
+                threading.Thread(target=ap, daemon=True).start()
+
+    def stop_finding(self):
+        self._in_finding = False
+        self._in_connecting = False
+
+    def find_port(
+        self, excluded_ports=None, retries=3, start_ports=None, start_bauds=None
+    ):
+        if start_bauds is None:
+            start_bauds = []
+        if start_ports is None:
+            start_ports = []
+        if self.connected:
+            return self.port
+        if self._in_finding:
+            return None
+        self._in_finding = True
+
         if excluded_ports is None:
             excluded_ports = []
-        for port in get_avalable_serial_ports(ignore=excluded_ports):
-            await self.connect_to_port(port, retries=retries)
+
+        ports = start_ports + list(
+            get_avalable_serial_ports(ignore=list(excluded_ports) + start_ports)
+        )
+        self.logger.info("Check ports" + str(ports))
+        for port in ports:
+            if self._in_finding:
+                self.connect_to_port(port, retries=retries, baud_rates=start_bauds)
             if self.connected:
-                return port
+                self._in_finding = False
+                return self.port
+        self._in_finding = False
 
-    def add_connection_check(self, function):
-        self.connection_checks.append(function)
+    def try_to_connect(
+        self, excluded_ports=None, retries=3, port=None, baud=None, **kwargs
+    ):
+        if baud is None:
+            baud = []
+        if not isinstance(baud, list):
+            baud = [baud]
+        if port is None:
+            port = []
+        if not isinstance(port, list):
+            port = [port]
 
-    async def connect_to_port(self, port, retries=3):
+        return self.find_port(
+            excluded_ports=excluded_ports,
+            retries=retries,
+            start_ports=port,
+            start_bauds=baud,
+        )
+
+    def connect_to_port(self, port, retries=3, baud_rates=None):
+        if baud_rates is None:
+            baud_rates = []
+        ini_arc = self.auto_reconnect
+        self.auto_reconnect = False
+        self._in_connecting = True
         for i in range(retries):
+            if not self._in_connecting:
+                break
             self.logger.debug(f'try connecting to port "{port} try {i + 1}/{retries}"')
-            for baud in self.POSSIBLE_BAUD_RATES:
+            for baud in set(baud_rates + self.possible_baud_rates):
+                if not self._in_connecting:
+                    break
                 self.logger.debug(f'try connecting to port "{port} with baud {baud}"')
                 try:
                     self._open_port(port=port, baud=baud)
+                    time.sleep(0.1)
                     check = True
                     for func in self.connection_checks:
-                        r = func()
-                        if asyncio.iscoroutine(r):
-                            r = await r
+                        r = False
+                        if self._in_connecting:
+                            r = func()
                         if not r:
                             check = False
                             break
                     if check:
+                        time.sleep(0.5)
                         self.connected = True
                         break
                     else:
                         self.stop_read(permanently=True)
                 except serial.serialutil.SerialException:
-                    await asyncio.sleep(1)
+                    time.sleep(0.5)
             if self.connected:
                 self.port = port
                 self.logger.info(f'successfully connected to "{port} with baud {baud}"')
                 if self.on_connect:
                     self.on_connect()
+                self.auto_reconnect = ini_arc
+                self._in_connecting = False
                 return port
+        self.auto_reconnect = ini_arc
+        self._in_connecting = False
+        return None
 
     def _close_port(self):
         self.port = None
@@ -132,10 +194,12 @@ class SerialCommunicator(AbstractCommunicator):
         if self.serial_connection or self.is_open:
             self._close_port()
         self.serial_connection = serial.Serial(port, baudrate=baud, timeout=0)
+        self.read_buffer = []
         self.is_open = True
-        self.run_task(self.work_port, blocking=False)
+        self._work_port_task = threading.Thread(target=self.work_port, daemon=True)
+        self._work_port_task.start()
 
-    async def work_port(self):
+    def work_port(self):
         while self.is_open:
             try:
                 if self.is_open:
@@ -154,20 +218,22 @@ class SerialCommunicator(AbstractCommunicator):
                             c = self.serial_connection.read()
                         except AttributeError as e:
                             c = ""
+                time.sleep(PORT_READ_TIME)
             except Exception as e:
                 self.logger.exception(e)
-                break
-            await asyncio.sleep(PORT_READ_TIME)
+                self.stop_read()
         self.logger.error("work_port stopped")
         self.stop_read()
 
-    def stop_read(self, permanently=False):
+    def stop_read(self, permanently=None):
         port = None
         baud = None
         if self.serial_connection:
             port = self.serial_connection.port
             baud = self.serial_connection.baudrate
         self._close_port()
+        if permanently is None:
+            permanently = not self.auto_reconnect
         if not permanently and port:
             self._open_port(port=port, baud=baud)
 
@@ -190,3 +256,12 @@ class SerialCommunicator(AbstractCommunicator):
 
     def validate_buffer(self):
         self.read_buffer = self.interpreter.decode_data(self.read_buffer, self)
+
+    def get_connection_info(self):
+        d = super().get_connection_info()
+        try:
+            d["port"] = self.serial_connection.port
+            d["baud"] = self.serial_connection.baudrate
+        except:
+            pass
+        return d

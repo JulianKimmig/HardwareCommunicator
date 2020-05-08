@@ -9,7 +9,7 @@ from hardware_communicator.message_interpreter.basic_interpreter import (
 def bytearray_to_dtype(byte_array, dtype):
     new = np.array(byte_array)
     if dtype == str:
-        new = b''.join(new).decode('latin-1')
+        new = b"".join(new).decode("latin-1")
     else:
         target_size = np.dtype(dtype).itemsize
         size = len(new.tostring())
@@ -26,16 +26,17 @@ class BinaryInterpreter(AbstractInterpreter):
         return SendItem(data=bytearray(data))
 
     def decode_data(self, data, target):
-        pass
+        print(data, target)
+        return data
 
 
 class StartKeyDataEndInterpreter(BinaryInterpreter):
     def __init__(
-            self,
-            send_start_code,
-            send_end_code,
-            receive_start_code=None,
-            receive_end_code=None,
+        self,
+        send_start_code,
+        send_end_code,
+        receive_start_code=None,
+        receive_end_code=None,
     ):
         super().__init__()
         if receive_start_code is None:
@@ -79,14 +80,14 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
         return d
 
     def add_query(
-            self,
-            name,
-            key,
-            send_size=0,
-            receive_size=0,
-            receive_function=None,
-            max_receive_size=None,
-            receive_dtype=None,
+        self,
+        name,
+        key,
+        send_size=0,
+        receive_size=0,
+        receive_function=None,
+        max_receive_size=None,
+        receive_dtype=None,
     ):
         if isinstance(key, str):
             key = key.encode()
@@ -110,6 +111,9 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
     def prepare_query(self, name, data=None):
         if data is None:
             data = []
+        assert name in self.queries, (
+            str(name) + " not in queries (" + str(list(self.queries.keys())) + ")"
+        )
         assert self.queries[name]["send_size"] == len(data)
         return self.encode_data(key=self.queries[name]["key"], data=data)
 
@@ -148,7 +152,7 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
                     for name, query in self.queries.items():
                         key = query["key"]
                         if key == b"".join(key_and_data[: len(key)]):
-                            raw_data = key_and_data[len(key):]
+                            raw_data = key_and_data[len(key) :]
                             receive_size = query["receive_size"]
                             if receive_size[1] >= len(raw_data) >= receive_size[0]:
                                 if query["receive_dtype"]:
@@ -158,8 +162,8 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
                                 try:
                                     query["receive_function"](target, raw_data)
                                 except Exception as e:
-                                    return data[data_end_position + 1:]
-                    return data[data_end_position + 1:]
+                                    return data[data_end_position + 1 :]
+                    return data[data_end_position + 1 :]
                 except Exception as e:
                     raise e
         return data[break_position:]
