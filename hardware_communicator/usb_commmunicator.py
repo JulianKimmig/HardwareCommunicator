@@ -241,6 +241,7 @@ class SerialCommunicator(AbstractCommunicator):
         self.stop_read(permanently=True)
 
     def write_to_port(self, send_item):
+        print(send_item)
         return self.send_queue.append(send_item)
 
     def _write_to_port(self):

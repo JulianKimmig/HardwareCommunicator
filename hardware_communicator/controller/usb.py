@@ -4,8 +4,14 @@ from json_dict import JsonDict
 
 from hardware_communicator.usb_commmunicator import SerialCommunicator
 
+def put_device_property_receive_function(name):
+    def f(target, data):
+        target.set_device_property(name, data)
 
-class SerialDevice(SerialCommunicator):
+    return f
+
+
+class USBDevice(SerialCommunicator):
     AVAILABLE_QUERIES = {}
 
     def __init__(self, port=None, auto_port=True, interpreter=None, **kwargs):
@@ -26,3 +32,6 @@ class SerialDevice(SerialCommunicator):
 
     def get_device_status(self, name):
         return self.config.get("device", "status", name, autosave=False)
+
+
+SerialDevice = USBDevice

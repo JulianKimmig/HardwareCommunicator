@@ -14,7 +14,7 @@ def bytearray_to_dtype(byte_array, dtype):
         target_size = np.dtype(dtype).itemsize
         size = len(new.tostring())
         new = np.zeros(size % target_size, dtype=np.uint8).tostring() + new.tostring()
-        new = np.frombuffer(new, dtype=dtype)
+        new = np.frombuffer(new, dtype=dtype)[0]
     return new
 
 
@@ -61,6 +61,7 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
             receive_start_code = [receive_start_code]
         if isinstance(receive_end_code, int):
             receive_end_code = [receive_end_code]
+
 
         self.send_end_code = [x for x in send_end_code]
         self.send_start_code = [x for x in send_start_code]
@@ -135,7 +136,7 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
                 return []
         if data_start_position > -1:
             data_end_position = -1
-            break_position = data_start_position
+            break_position = start_position
             try:
                 end_position = num_data.index(self.receive_end_code[0])
                 for i, c in enumerate(self.receive_end_code):
@@ -146,6 +147,7 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
                     data_end_position = end_position
             except:
                 pass
+
             if data_end_position > -1:
                 key_and_data = data[data_start_position:data_end_position]
                 try:
