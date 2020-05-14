@@ -4,8 +4,10 @@ from json_dict import JsonDict
 
 from hardware_communicator.usb_commmunicator import SerialCommunicator
 
-def put_device_property_receive_function(name):
+def put_device_property_receive_function(name,parsefunc=None):
     def f(target, data):
+        if parsefunc:
+            data = parsefunc(data)
         target.set_device_property(name, data)
 
     return f

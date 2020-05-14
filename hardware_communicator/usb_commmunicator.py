@@ -53,9 +53,10 @@ class SerialCommunicator(AbstractCommunicator):
         1200,
     ]
 
-    def __init__(self, interpreter, port=None, auto_port=True, **kwargs):
+    def __init__(self, interpreter, port=None, auto_port=True, baud=None, **kwargs):
         super().__init__(interpreter=interpreter, **kwargs)
         self.port = port
+
         self.serial_connection = None
         self.is_open = False
         self.read_buffer = []
@@ -63,10 +64,10 @@ class SerialCommunicator(AbstractCommunicator):
         self._in_finding = False
         self._in_connecting = False
         self.auto_reconnect = True
-        self.possible_baud_rates = [pb for pb in self.POSSIBLE_BAUD_RATES]
+        self.connected = False
+        self.possible_baud_rates = [baud]+[pb for pb in self.POSSIBLE_BAUD_RATES if pb != baud]
 
         if self.port:
-
             def ap():
                 time.sleep(0.5)
                 self.connect_to_port(port)
@@ -75,7 +76,6 @@ class SerialCommunicator(AbstractCommunicator):
 
         if not self.connected:
             if auto_port and self.interpreter:
-
                 def ap():
                     time.sleep(0.7)
                     self.find_port()
@@ -87,7 +87,7 @@ class SerialCommunicator(AbstractCommunicator):
         self._in_connecting = False
 
     def find_port(
-        self, excluded_ports=None, retries=3, start_ports=None, start_bauds=None
+            self, excluded_ports=None, retries=3, start_ports=None, start_bauds=None
     ):
         if start_bauds is None:
             start_bauds = []
@@ -115,7 +115,7 @@ class SerialCommunicator(AbstractCommunicator):
         self._in_finding = False
 
     def try_to_connect(
-        self, excluded_ports=None, retries=3, port=None, baud=None, **kwargs
+            self, excluded_ports=None, retries=3, port=None, baud=None, **kwargs
     ):
         if baud is None:
             baud = []
@@ -139,7 +139,7 @@ class SerialCommunicator(AbstractCommunicator):
         ini_arc = self.auto_reconnect
         self.auto_reconnect = False
         self._in_connecting = True
-        for i in range(retries):
+        for i in range(max(1, retries)):
             if not self._in_connecting:
                 break
             self.logger.debug(f'try connecting to port "{port} try {i + 1}/{retries}"')
