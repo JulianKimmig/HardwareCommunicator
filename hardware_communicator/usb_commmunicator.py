@@ -231,6 +231,7 @@ class SerialCommunicator(AbstractCommunicator):
         if self.serial_connection:
             port = self.serial_connection.port
             baud = self.serial_connection.baudrate
+
         self._close_port()
         if permanently is None:
             permanently = not self.auto_reconnect
