@@ -1,3 +1,4 @@
 json_dict
 pyserial
 data_recorder
+Cython
