@@ -7,28 +7,30 @@ import time
 import serial
 
 from hardware_communicator.abstract_communicator import AbstractCommunicator
+import serial.tools.list_ports
 
 
-def get_avalable_serial_ports(ignore=None):
+def get_avalable_serial_ports(ignore=None, with_connection_check=True):
     if ignore is None:
         ignore = []
-    if sys.platform.startswith("win"):
-        ports = ["COM%s" % (i + 1) for i in range(256)]
-    elif sys.platform.startswith("linux") or sys.platform.startswith("cygwin"):
-        # this excludes your current terminal "/dev/tty"
-        ports = glob.glob("/dev/tty[A-Za-z]*")
-    elif sys.platform.startswith("darwin"):
-        ports = glob.glob("/dev/tty.*")
-    else:
-        raise EnvironmentError("Unsupported platform")
+    # if sys.platform.startswith("win"):
+    #    ports = ["COM%s" % (i + 1) for i in range(256)]
+    # elif sys.platform.startswith("linux") or sys.platform.startswith("cygwin"):
+    # this excludes your current terminal "/dev/tty"
+    #   ports = glob.glob("/dev/tty[A-Za-z]*")
+    # elif sys.platform.startswith("darwin"):
+    #    ports = glob.glob("/dev/tty.*")
+    # else:
+    #    raise EnvironmentError("Unsupported platform")
 
-    ports = set(ports)
+    ports = set([p.device for p in serial.tools.list_ports.comports()])
 
     result = []
     for port in ports.difference(ignore):
         try:
-            s = serial.Serial(port)
-            s.close()
+            if with_connection_check:
+                s = serial.Serial(port)
+                s.close()
             result.append(port)
         except (OSError, serial.SerialException):
             pass
@@ -65,7 +67,8 @@ class SerialCommunicator(AbstractCommunicator):
         self._in_connecting = False
         self.auto_reconnect = True
         self.connected = False
-        self.possible_baud_rates = [baud]+[pb for pb in self.POSSIBLE_BAUD_RATES if pb != baud]
+        self.possible_baud_rates = ([baud] if baud is not None else []) + [pb for pb in self.POSSIBLE_BAUD_RATES if
+                                                                           pb != baud]
 
         if self.port:
             def ap():
@@ -148,7 +151,7 @@ class SerialCommunicator(AbstractCommunicator):
                     break
                 self.logger.debug(f'try connecting to port "{port} with baud {baud}"')
                 try:
-                    self._open_port(port=port, baud=baud)
+                    self._start_work_port_thread(port,baud)
                     time.sleep(0.1)
                     check = True
                     for func in self.connection_checks:
@@ -181,13 +184,17 @@ class SerialCommunicator(AbstractCommunicator):
     def _close_port(self):
         self.port = None
         port = None
+        self.is_open = False
+        time.sleep(PORT_READ_TIME * 2)
         if self.serial_connection:
             port = self.serial_connection.port
-            self.serial_connection.close()
+            try:
+                self.serial_connection.close()
+            except:
+                pass
         if self.is_open:
             self.logger.info("port closed " + port)
         self.serial_connection = None
-        self.is_open = False
 
     def _open_port(self, port, baud):
         self.port = port
@@ -196,8 +203,7 @@ class SerialCommunicator(AbstractCommunicator):
         self.serial_connection = serial.Serial(port, baudrate=baud, timeout=0)
         self.read_buffer = []
         self.is_open = True
-        self._work_port_task = threading.Thread(target=self.work_port, daemon=True)
-        self._work_port_task.start()
+        self.work_port()
 
     def work_port(self):
         while self.is_open:
@@ -223,7 +229,7 @@ class SerialCommunicator(AbstractCommunicator):
                 self.logger.exception(e)
                 self.stop_read()
         self.logger.error("work_port stopped")
-        self.stop_read()
+        self.stop_read(permanently=True)
 
     def stop_read(self, permanently=None):
         port = None
@@ -236,13 +242,15 @@ class SerialCommunicator(AbstractCommunicator):
         if permanently is None:
             permanently = not self.auto_reconnect
         if not permanently and port:
-            self._open_port(port=port, baud=baud)
+            if threading.current_thread().name == "work_port_thread":
+                self._open_port(port=port, baud=baud)
+            else:
+                self._start_work_port_thread(port,baud)
 
     def detatch(self):
         self.stop_read(permanently=True)
 
     def write_to_port(self, send_item):
-        print(send_item)
         return self.send_queue.append(send_item)
 
     def _write_to_port(self):
@@ -267,3 +275,9 @@ class SerialCommunicator(AbstractCommunicator):
         except:
             pass
         return d
+
+    def _start_work_port_thread(self,port,baud):
+        self._work_port_task = threading.Thread(target=self._open_port, kwargs={'port': port, 'baud': baud},
+                                                daemon=True)
+        self._work_port_task.name = "work_port_thread"
+        self._work_port_task.start()
