@@ -122,6 +122,7 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
         num_data = [ord(x) for x in data]
         data_start_position = 0
         break_position = 0
+        start_position=0
         if len(self.receive_start_code) > 0:
             try:
                 start_position = num_data.index(self.receive_start_code[0])

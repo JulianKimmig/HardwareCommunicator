@@ -162,11 +162,11 @@ class SerialCommunicator(AbstractCommunicator):
                             check = False
                             break
                     if check:
-                        time.sleep(0.5)
                         self.connected = True
                         break
                     else:
                         self.stop_read(permanently=True)
+                        time.sleep(0.5)
                 except serial.serialutil.SerialException:
                     time.sleep(0.5)
             if self.connected:
