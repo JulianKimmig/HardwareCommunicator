@@ -115,7 +115,8 @@ class StartKeyDataEndInterpreter(BinaryInterpreter):
         assert name in self.queries, (
             str(name) + " not in queries (" + str(list(self.queries.keys())) + ")"
         )
-        assert self.queries[name]["send_size"] == len(data)
+        if self.queries[name]["send_size"] is not None:
+            assert self.queries[name]["send_size"] == len(data)
         return self.encode_data(key=self.queries[name]["key"], data=data)
 
     def decode_data(self, data, target):
